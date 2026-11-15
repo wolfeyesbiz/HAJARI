@@ -1,0 +1,140 @@
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AuthProvider, useAuth } from './lib/auth';
+import { AppShell } from './components/AppShell';
+import { Toaster } from './components/ui';
+import { LoginPage } from './pages/Login';
+import { DashboardPage } from './pages/Dashboard';
+import { StudentAttendancePage } from './pages/StudentAttendance';
+import { StaffAttendancePage } from './pages/StaffAttendance';
+import { HistoryPage } from './pages/History';
+import { ReportsPage } from './pages/Reports';
+import { CorrectionsPage } from './pages/Corrections';
+import { MyAttendancePage } from './pages/MyAttendance';
+import { AdminPage } from './pages/Admin';
+import { SmsPage, AuditPage } from './pages/Sms';
+
+function Blocked({ message }: { message: string }) {
+  return (
+    <div className="card p-6">
+      <h1 className="text-lg font-semibold">Not available</h1>
+      <p className="mt-1 text-sm muted">{message}</p>
+    </div>
+  );
+}
+
+function Guard({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const { me } = useAuth();
+  if (!me) return <Navigate to="/login" replace />;
+  if (!roles.includes(me.user.role)) return <Blocked message="Your role does not have access to this page." />;
+  return <>{children}</>;
+}
+
+function Shell() {
+  const { me, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
+          <p className="mt-3 text-sm muted">Loading AttendEase…</p>
+        </div>
+      </div>
+    );
+  }
+  if (!me) return <Navigate to="/login" replace />;
+
+  return (
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route
+          path="/attendance/student"
+          element={
+            <Guard roles={['admin', 'hod', 'teacher']}>
+              <StudentAttendancePage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/attendance/staff"
+          element={
+            <Guard roles={['admin', 'hod']}>
+              <StaffAttendancePage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <Guard roles={['admin', 'hod', 'teacher']}>
+              <HistoryPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <Guard roles={['admin', 'hod', 'teacher']}>
+              <ReportsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/corrections"
+          element={
+            <Guard roles={['admin', 'hod', 'teacher']}>
+              <CorrectionsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/my-attendance"
+          element={
+            <Guard roles={['student', 'staff', 'teacher']}>
+              <MyAttendancePage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <Guard roles={['admin']}>
+              <AdminPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/sms"
+          element={
+            <Guard roles={['admin', 'hod']}>
+              <SmsPage />
+            </Guard>
+          }
+        />
+        <Route
+          path="/audit"
+          element={
+            <Guard roles={['admin', 'hod']}>
+              <AuditPage />
+            </Guard>
+          }
+        />
+        <Route path="*" element={<Blocked message="That page does not exist." />} />
+      </Routes>
+    </AppShell>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/*" element={<Shell />} />
+        </Routes>
+      </BrowserRouter>
+      <Toaster />
+    </AuthProvider>
+  );
+}

@@ -1,0 +1,146 @@
+import React from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
+import { useTheme, useMediaQuery } from '../lib/api';
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: string;
+  roles: string[];
+}
+
+const NAV: NavItem[] = [
+  { to: '/', label: 'Dashboard', icon: '▦', roles: ['admin', 'hod', 'teacher', 'student', 'staff'] },
+  { to: '/attendance/student', label: 'Student attendance', icon: '✓', roles: ['admin', 'hod', 'teacher'] },
+  { to: '/attendance/staff', label: 'Staff attendance', icon: '☰', roles: ['admin', 'hod'] },
+  { to: '/history', label: 'Attendance history', icon: '⟲', roles: ['admin', 'hod', 'teacher'] },
+  { to: '/corrections', label: 'Corrections', icon: '⚑', roles: ['admin', 'hod', 'teacher'] },
+  { to: '/reports', label: 'Reports', icon: '⤓', roles: ['admin', 'hod', 'teacher'] },
+  { to: '/my-attendance', label: 'My attendance', icon: '◉', roles: ['student', 'staff', 'teacher'] },
+  { to: '/admin', label: 'Administration', icon: '⚙', roles: ['admin'] },
+  { to: '/sms', label: 'SMS & notifications', icon: '✉', roles: ['admin', 'hod'] },
+  { to: '/audit', label: 'Audit log', icon: '≡', roles: ['admin', 'hod'] },
+];
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const { me, logout } = useAuth();
+  const { dark, toggle } = useTheme();
+  const [open, setOpen] = React.useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isDesktop = useMediaQuery('(min-width: 1024px)');
+
+  React.useEffect(() => setOpen(false), [location.pathname]);
+
+  const role = me?.user.role ?? 'student';
+  const items = NAV.filter((n) => n.roles.includes(role));
+
+  const sidebar = (
+    <nav className="flex flex-col gap-1 p-3" aria-label="Main navigation">
+      {items.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.to === '/'}
+          className={({ isActive }) =>
+            `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+              isActive ? 'bg-white/12 text-white ring-1 ring-inset ring-white/15' : 'text-navy-100 hover:bg-white/8 hover:text-white'
+            }`
+          }
+        >
+          <span aria-hidden className="w-5 text-center text-base opacity-90">
+            {item.icon}
+          </span>
+          <span className="truncate">{item.label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
+
+  return (
+    <div className="min-h-full lg:flex">
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:flex lg:w-64 lg:shrink-0 lg:flex-col bg-navy-900 text-white sticky top-0 h-screen no-print">
+        <div className="flex items-center gap-2.5 px-4 py-4 border-b border-white/10">
+          <img src="/favicon.svg" alt="" width={30} height={30} />
+          <div>
+            <p className="font-semibold leading-tight">HAJARI</p>
+            <p className="text-[11px] text-navy-200">Smart attendance</p>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">{sidebar}</div>
+        <div className="p-3 border-t border-white/10">
+          <div className="rounded-lg bg-white/5 p-3">
+            <p className="text-sm font-medium truncate">{me?.user.full_name}</p>
+            <p className="text-[11px] uppercase tracking-wide text-navy-200">
+              {me?.user.role} {me?.user.department_code ? `• ${me.user.department_code}` : ''}
+            </p>
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button className="flex-1 rounded-lg border border-white/15 px-2 py-2 text-xs text-navy-100 hover:bg-white/10" onClick={toggle}>
+              {dark ? '☀ Light' : '☾ Dark'}
+            </button>
+            <button
+              className="flex-1 rounded-lg border border-white/15 px-2 py-2 text-xs text-navy-100 hover:bg-white/10"
+              onClick={() => void logout().then(() => navigate('/login'))}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile top bar */}
+        <header className="sticky top-0 z-40 flex items-center gap-3 bg-navy-900 px-3 pb-3 text-white lg:hidden no-print" style={{ paddingTop: "max(48px, calc(env(safe-area-inset-top, 0px) + 48px))" }}>
+          <button
+            aria-label="Open menu"
+            aria-expanded={open}
+            className="min-h-12 min-w-12 rounded-lg border border-white/20 px-3 py-3 text-sm touch-manipulation"
+            onClick={() => setOpen((o) => !o)}
+          >
+            ☰
+          </button>
+          <div className="flex items-center gap-2">
+            <img src="/favicon.svg" alt="" width={22} height={22} />
+            <span className="font-semibold text-sm">HAJARI</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button className="min-h-12 min-w-12 rounded-lg border border-white/20 px-3 py-3 text-sm touch-manipulation" onClick={toggle} aria-label="Toggle theme">
+              {dark ? '☀' : '☾'}
+            </button>
+            <button
+              className="min-h-12 min-w-12 rounded-lg border border-white/20 px-3 py-3 text-sm touch-manipulation"
+              onClick={() => void logout().then(() => navigate('/login'))}
+            >
+              Sign out
+            </button>
+          </div>
+        </header>
+
+        {open && !isDesktop && (
+          <div className="bg-navy-900 pb-3 lg:hidden no-print">{sidebar}</div>
+        )}
+
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
+
+        <footer className="px-4 py-4 text-center text-[11px] muted no-print">
+          HAJARI • {new Date().getFullYear()} • Attendance records are audited
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="text-xl font-semibold sm:text-2xl">{title}</h1>
+        {subtitle && <p className="mt-0.5 text-sm muted">{subtitle}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}

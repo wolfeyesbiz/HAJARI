@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #ffffff;
+  --surface-2: #f6f8fb;
+  --border: #e4e8ef;
+  --text: #101828;
+  --muted: #667085;
+  --nav: #12294f;
+  --nav-2: #0b1a33;
+  --accent: #06b6d4;
+}
+
+.dark {
+  --surface: #111a2b;
+  --surface-2: #0b1220;
+  --border: #223049;
+  --text: #eef2f8;
+  --muted: #98a4b8;
+  --nav: #0b1a33;
+  --nav-2: #07101f;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-2);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .surface {
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .card {
+    @apply surface rounded-xl shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-medium transition
+           disabled:cursor-not-allowed disabled:opacity-50 min-h-[44px] px-4 text-sm;
+  }
+  .btn-primary {
+    @apply btn bg-navy-800 text-white hover:bg-navy-900 active:bg-navy-950 shadow-sm;
+  }
+  .btn-accent {
+    @apply btn bg-cyan-600 text-white hover:bg-cyan-700;
+  }
+  .btn-ghost {
+    @apply btn border hover:bg-[color:var(--surface-2)];
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+  .input {
+    @apply w-full rounded-lg border px-3 py-2.5 text-sm min-h-[44px] bg-[color:var(--surface)] text-[color:var(--text)];
+    border-color: var(--border);
+  }
+  .input:focus {
+    @apply border-cyan-500 ring-2 ring-cyan-500/20 outline-none;
+  }
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wide mb-1.5;
+    color: var(--muted);
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium;
+  }
+  .table-wrap {
+    @apply w-full overflow-x-auto;
+  }
+  .tbl {
+    @apply w-full text-sm border-collapse;
+  }
+  .tbl thead th {
+    @apply text-left font-semibold text-xs uppercase tracking-wide py-2.5 px-3 whitespace-nowrap;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .tbl tbody td {
+    @apply py-2.5 px-3 align-middle;
+    border-bottom: 1px solid var(--border);
+  }
+  .tbl tbody tr:hover {
+    background: var(--surface-2);
+  }
+  .skeleton {
+    @apply animate-pulse rounded-lg;
+    background: var(--border);
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

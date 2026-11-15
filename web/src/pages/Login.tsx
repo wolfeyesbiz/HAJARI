@@ -1,0 +1,181 @@
+﻿import { useState } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
+
+const DEMO = [
+  { role: 'Administrator', email: 'admin@attendease.college', password: 'Admin@123' },
+  { role: 'HOD (AI & ML)', email: 'hod.cs@attendease.college', password: 'Hod@123' },
+  { role: 'Teacher (AI & ML)', email: 'teacher.cs@attendease.college', password: 'Teacher@123' },
+  { role: 'Student', email: 'student@attendease.college', password: 'Student@123' },
+  { role: 'Staff (AI & ML)', email: 'staff.cs@attendease.college', password: 'Staff@123' },
+];
+
+export function LoginPage() {
+  const { me, login } = useAuth();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showDemo, setShowDemo] = useState(false);
+
+  if (me) return <Navigate to="/" replace />;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await login(email.trim(), password);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen lg:grid lg:grid-cols-2">
+      {/* Brand panel */}
+      <div className="relative hidden overflow-hidden bg-navy-900 p-10 text-white lg:flex lg:flex-col lg:justify-between">
+        <div className="flex items-center gap-3">
+          <img src="/hajari-logo.jpeg" alt="HAJARI logo" width={38} height={38} className="rounded-md object-contain" />
+          <div>
+            <p className="text-lg font-semibold">HAJARI</p>
+            <p className="text-xs text-navy-200">Smart College Attendance Management</p>
+          </div>
+        </div>
+        <div className="relative z-10 max-w-md">
+          <h1 className="text-3xl font-semibold leading-tight">
+            Mark a full class present in <span className="text-cyan-300">two taps</span>.
+          </h1>
+          <p className="mt-4 text-sm text-navy-100 leading-relaxed">
+            Student and staff attendance for all seven departments, with SMS alerts to guardians, correction
+            approvals and audited records - on any phone, tablet or desktop.
+          </p>
+          <ul className="mt-6 space-y-3 text-sm">
+            {[
+              'Works offline-first on the college Wi-Fi and mobile data',
+              'Duplicate attendance blocked at the database level',
+              'Every edit audited with who, when and why',
+              'Guardians notified only per your department policy',
+            ].map((t) => (
+              <li key={t} className="flex gap-2.5 text-navy-100">
+                <span className="text-cyan-300">✓</span>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="text-[11px] text-navy-300">
+          Demo dataset is flagged separately from production records and can be excluded from any report.
+        </p>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-cyan-500/20 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-24 -left-10 h-72 w-72 rounded-full bg-navy-500/30 blur-3xl"
+        />
+      </div>
+
+      {/* Form */}
+      <div className="flex min-h-screen flex-col justify-center px-5 py-10 sm:px-10">
+        <div className="mx-auto w-full max-w-sm">
+          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
+            <img src="/hajari-logo.jpeg" alt="HAJARI logo" width={34} height={34} className="rounded-md object-contain" />
+            <div>
+              <p className="font-semibold">HAJARI</p>
+              <p className="text-[11px] muted">Smart attendance</p>
+            </div>
+          </div>
+          <h2 className="text-2xl font-semibold">Sign in</h2>
+          <p className="mt-1 text-sm muted">Use your college account. Sessions expire after 12 hours.</p>
+
+          <form className="mt-6 space-y-4" onSubmit={submit}>
+            <div>
+              <label className="label" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                className="input"
+                type="email"
+                autoComplete="username"
+                inputMode="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@attendease.college"
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="password">
+                Password
+              </label>
+              <input
+                id="password"
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+
+            {error && (
+              <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            <button className="btn-primary w-full" type="submit" disabled={busy}>
+              {busy ? 'Signing in...' : 'Sign in'}
+            </button>
+          </form>
+
+          <button
+            className="mt-5 w-full text-left text-xs font-medium text-cyan-700 hover:underline"
+            onClick={() => setShowDemo((s) => !s)}
+            aria-expanded={showDemo}
+          >
+            {showDemo ? 'Hide demo accounts' : 'Show demo accounts'}
+          </button>
+
+          {showDemo && (
+            <div className="mt-2 divide-y rounded-xl border text-sm" style={{ borderColor: 'var(--border)' }}>
+              {DEMO.map((d) => (
+                <button
+                  key={d.email}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-[color:var(--surface-2)]"
+                  onClick={() => {
+                    setEmail(d.email);
+                    setPassword(d.password);
+                  }}
+                >
+                  <span>
+                    <span className="block font-medium">{d.role}</span>
+                    <span className="block text-[11px] muted">{d.email}</span>
+                  </span>
+                  <span className="text-[11px] text-cyan-700">Use</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p className="mt-6 text-[11px] leading-relaxed muted">
+            Attendance data is personal information. Access is logged. Contact the college office to correct any
+            recorded information or to update guardian consent.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+

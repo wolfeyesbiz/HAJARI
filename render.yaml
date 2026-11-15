@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: hajari-app
+    runtime: node
+    plan: free
+    buildCommand: npm --prefix server install && npm --prefix web install && npm --prefix web run build && npm --prefix server run build
+    startCommand: npm --prefix server start
+    healthCheckPath: /api/health
+    initialDeployHook: npm --prefix server run seed
+    region: singapore
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_DRIVER
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: SMS_DRIVER
+        value: log
