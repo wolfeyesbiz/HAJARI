@@ -3,37 +3,6 @@ import { api, toast, useOnce } from '../lib/api';
 import { EmptyState, ErrorBox, Spinner, StatusPill } from '../components/ui';
 import { PageHeader } from '../components/AppShell';
 
-function parseStudentCsv(text: string) {
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(line => line.trim());
-  if (lines.length < 2) throw new Error('CSV needs a header and at least one student row.');
-  const parseRow = (line: string) => {
-    const cells: string[] = [];
-    let value = '', quoted = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"' && quoted && line[i + 1] === '"') { value += '"'; i++; }
-      else if (ch === '"') quoted = !quoted;
-      else if (ch === ',' && !quoted) { cells.push(value.trim()); value = ''; }
-      else value += ch;
-    }
-    cells.push(value.trim());
-    return cells;
-  };
-  const headers = parseRow(lines[0]).map(h => h.trim().toLowerCase().replace(/[\s-]+/g, '_'));
-  const index = (names: string[]) => headers.findIndex(h => names.includes(h));
-  const roll = index(['roll_no', 'roll', 'usn', 'student_id']);
-  const name = index(['full_name', 'name', 'student_name']);
-  if (roll < 0 || name < 0) throw new Error('CSV must include roll_no (or roll/USN) and full_name (or name) columns.');
-  const optional = { email: index(['email']), phone: index(['phone', 'mobile']), guardian_name: index(['guardian_name', 'parent_name']), guardian_phone: index(['guardian_phone', 'parent_phone']) };
-  return lines.slice(1).map((line, rowNo) => {
-    const cells = parseRow(line);
-    const val = (i: number) => i < 0 ? '' : cells[i] ?? '';
-    const record = { roll_no: val(roll), full_name: val(name), email: val(optional.email), phone: val(optional.phone), guardian_name: val(optional.guardian_name), guardian_phone: val(optional.guardian_phone) };
-    if (!record.roll_no || !record.full_name) throw new Error(`Row ${rowNo + 2} needs both roll number and name.`);
-    return record;
-  });
-}
-
 type Tab = 'departments' | 'classes' | 'subjects' | 'users' | 'students' | 'staff' | 'assignments';
 
 export function AdminPage() {
@@ -384,9 +353,11 @@ function Students() {
     if (!file || !classId) return;
     try {
       setUploading(true);
-      const rows = parseStudentCsv(await file.text());
-      const result = await api<{ imported: number }>('/people/students/import', { json: { class_id: Number(classId), students: rows } });
-      toast.success(`${result.imported} students imported. Demo students for this class were replaced.`);
+      const form = new FormData();
+      form.set('class_id', classId);
+      form.set('file', file);
+      const result = await api<{ imported: number; replaced_demo: number }>('/people/students/import-csv', { method: 'POST', body: form });
+      toast.success(`${result.imported} students imported; ${result.replaced_demo} demo students replaced.`);
       list.reload();
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Could not import this CSV.'); }
     finally { setUploading(false); }
@@ -394,9 +365,9 @@ function Students() {
   return (
     <div className="space-y-3">
       <div className="card flex flex-wrap items-center gap-2 p-4">
-        <div className="min-w-[220px] flex-1"><h2 className="font-semibold">Import student CSV</h2><p className="muted text-xs">Required columns: roll_no, full_name. Optional: email, phone, guardian_name, guardian_phone. Demo rows in this class will be replaced.</p></div>
+        <div className="min-w-[220px] flex-1"><h2 className="font-semibold">Import student CSV</h2><p className="muted text-xs">Required columns: roll_no, full_name. Optional: email, phone, guardian_name, guardian_phone. Imports replace demo students in the selected class.</p><a className="mt-1 inline-block text-xs font-medium text-cyan-700 hover:underline" href="data:text/csv;charset=utf-8,roll_no%2Cfull_name%2Cemail%2Cphone%2Cguardian_name%2Cguardian_phone%0A" download="students-template.csv">Download CSV template</a></div>
         <select className="input max-w-xs" value={classId} onChange={e => setClassId(e.target.value)} aria-label="Class for student import"><option value="">Choose class</option>{(classes.data?.classes ?? []).map(c => <option key={c.id} value={c.id}>{c.name} • Sec {c.section} • Sem {c.semester} • {c.academic_year}{c.cycle !== 'standard' ? ` • ${c.cycle} cycle` : ''}</option>)}</select>
-        <label className={`btn-primary cursor-pointer ${!classId || uploading ? 'pointer-events-none opacity-50' : ''}`}> {uploading ? 'Importing…' : 'Choose CSV'}<input className="sr-only" type="file" accept=".csv,text/csv" disabled={!classId || uploading} onChange={e => { void importCsv(e.target.files?.[0]); e.currentTarget.value = ''; }} /></label>
+        <label className={`btn-primary cursor-pointer ${!classId || uploading ? 'pointer-events-none opacity-50' : ''}`}> {uploading ? 'Importing…' : 'Upload CSV'}<input className="sr-only" type="file" accept=".csv,text/csv" disabled={!classId || uploading} onChange={e => { void importCsv(e.target.files?.[0]); e.currentTarget.value = ''; }} /></label>
       </div>
       <input className="input max-w-sm" placeholder="Search students" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search students" />
       <div className="card overflow-hidden">

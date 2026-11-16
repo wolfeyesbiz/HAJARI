@@ -1,13 +1,17 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { q, one, tx } from '../db/index.js';
 import { ah, badRequest, conflict, notFound } from '../lib/errors.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { hashPassword } from '../lib/crypto.js';
 import { audit } from '../lib/audit.js';
+import multer from 'multer';
+import { parse as parseCsv } from 'csv-parse/sync';
 
 export const peopleRouter = Router();
 peopleRouter.use(requireAuth);
+
+const studentCsvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }).single('file');
 
 /* ------------------------------- Students ------------------------------- */
 
@@ -115,40 +119,84 @@ peopleRouter.patch(
   }),
 );
 
-const studentImportSchema = z.object({
-  class_id: z.number().int().positive(),
-  students: z.array(z.object({
-    roll_no: z.string().trim().min(2).max(30),
-    full_name: z.string().trim().min(2).max(120),
-    email: z.string().trim().email().optional().or(z.literal('')),
-    phone: z.string().trim().max(20).optional().or(z.literal('')),
-    guardian_name: z.string().trim().max(120).optional().or(z.literal('')),
-    guardian_phone: z.string().trim().max(20).optional().or(z.literal('')),
-  })).min(1).max(2000),
+const studentCsvRowSchema = z.object({
+  roll_no: z.string().trim().min(2).max(30),
+  full_name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().optional().or(z.literal('')),
+  phone: z.string().trim().max(20).optional().or(z.literal('')),
+  guardian_name: z.string().trim().max(120).optional().or(z.literal('')),
+  guardian_phone: z.string().trim().max(20).optional().or(z.literal('')),
 });
 
-peopleRouter.post('/students/import', requireRole('admin'), ah(async (req, res) => {
-  const parsed = studentImportSchema.safeParse(req.body);
-  if (!parsed.success) throw badRequest(parsed.error.issues[0]?.message ?? 'Invalid student CSV data.');
-  const { class_id: classId, students } = parsed.data;
+const studentCsvUploadMiddleware: RequestHandler = (req, res, next) => {
+  studentCsvUpload(req, res, (err: unknown) => {
+    if (err) return next(badRequest(err instanceof Error && err.message.includes('File too large') ? 'CSV must be 5 MB or smaller.' : 'Could not read the uploaded CSV.'));
+    next();
+  });
+};
+
+peopleRouter.post('/students/import-csv', requireRole('admin'), studentCsvUploadMiddleware, ah(async (req, res) => {
+  if (!req.file) throw badRequest('Choose a CSV file to upload.');
+  const classId = Number(req.body.class_id);
+  if (!Number.isInteger(classId) || classId <= 0) throw badRequest('Choose a valid class for this import.');
   const cls = await one<{ department_id: number; semester: number; section: string }>(
     'SELECT department_id, semester, section FROM classes WHERE id=$1', [classId],
   );
   if (!cls) throw notFound('Class not found.');
-  const rolls = students.map(s => s.roll_no.toUpperCase());
-  if (new Set(rolls).size !== rolls.length) throw badRequest('The CSV contains duplicate roll numbers.');
-  const collisions = await q<{ roll_no: string }>('SELECT roll_no FROM students WHERE upper(roll_no)=ANY($1::text[]) AND NOT (class_id=$2 AND is_demo)', [rolls, classId]);
+
+  let csvRows: string[][];
+  try {
+    csvRows = parseCsv(req.file.buffer, { bom: true, skip_empty_lines: true, trim: true, max_record_size: 20_000 });
+  } catch {
+    throw badRequest('CSV formatting is invalid. Check that quoted fields are closed correctly.');
+  }
+  if (csvRows.length < 2) throw badRequest('CSV needs a header row and at least one student.');
+  if (csvRows.length > 2001) throw badRequest('A CSV can contain at most 2,000 students per import.');
+
+  const normalizeHeader = (value: string) => value.trim().toLowerCase().replace(/[\\s-]+/g, '_');
+  const headers = csvRows[0].map(normalizeHeader);
+  if (new Set(headers).size !== headers.length) throw badRequest('CSV contains duplicate column headers.');
+  const findColumn = (...names: string[]) => headers.findIndex(header => names.includes(header));
+  const columns = {
+    roll_no: findColumn('roll_no', 'roll', 'usn', 'student_id'),
+    full_name: findColumn('full_name', 'name', 'student_name'),
+    email: findColumn('email'),
+    phone: findColumn('phone', 'mobile'),
+    guardian_name: findColumn('guardian_name', 'parent_name'),
+    guardian_phone: findColumn('guardian_phone', 'parent_phone'),
+  };
+  if (columns.roll_no < 0 || columns.full_name < 0) {
+    throw badRequest('CSV needs roll_no (or roll/USN) and full_name (or name) columns.');
+  }
+
+  const students = csvRows.slice(1).map((cells, rowIndex) => {
+    const value = (column: number) => column < 0 ? '' : (cells[column] ?? '').trim();
+    const parsed = studentCsvRowSchema.safeParse({
+      roll_no: value(columns.roll_no), full_name: value(columns.full_name), email: value(columns.email),
+      phone: value(columns.phone), guardian_name: value(columns.guardian_name), guardian_phone: value(columns.guardian_phone),
+    });
+    if (!parsed.success) throw badRequest(`CSV row ${rowIndex + 2}: ${parsed.error.issues[0]?.message ?? 'invalid student data.'}`);
+    return parsed.data;
+  });
+
+  const rolls = students.map(student => student.roll_no.toUpperCase());
+  if (new Set(rolls).size !== rolls.length) throw badRequest('CSV contains duplicate roll numbers.');
+  const collisions = await q<{ roll_no: string }>(
+    'SELECT roll_no FROM students WHERE upper(roll_no)=ANY($1::text[]) AND NOT (class_id=$2 AND is_demo)', [rolls, classId],
+  );
   if (collisions.length) throw conflict(`Roll number ${collisions[0].roll_no} already exists.`);
+  const demoCount = await one<{ count: number }>('SELECT count(*)::int AS count FROM students WHERE class_id=$1 AND is_demo=TRUE', [classId]);
+
   await tx(async t => {
     await t.q('DELETE FROM students WHERE class_id=$1 AND is_demo=TRUE', [classId]);
-    for (const s of students) {
+    for (const student of students) {
       await t.q(`INSERT INTO students (roll_no,full_name,email,phone,department_id,class_id,semester,section,guardian_name,guardian_phone,is_demo)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,FALSE)`,
-      [s.roll_no,s.full_name,s.email||null,s.phone||null,cls.department_id,classId,cls.semester,cls.section,s.guardian_name||null,s.guardian_phone||null]);
+      [student.roll_no,student.full_name,student.email||null,student.phone||null,cls.department_id,classId,cls.semester,cls.section,student.guardian_name||null,student.guardian_phone||null]);
     }
   });
-  await audit({ actorUserId: req.user!.id, action: 'student.import', entity: 'classes', entityId: classId, after: { imported: students.length }, req });
-  res.status(201).json({ imported: students.length });
+  await audit({ actorUserId: req.user!.id, action: 'student.import', entity: 'classes', entityId: classId, after: { imported: students.length, replaced_demo: Number(demoCount?.count ?? 0) }, req });
+  res.status(201).json({ imported: students.length, replaced_demo: Number(demoCount?.count ?? 0) });
 }));
 
 /* --------------------------------- Staff -------------------------------- */
