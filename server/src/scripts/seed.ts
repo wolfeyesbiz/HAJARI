@@ -66,7 +66,6 @@ function pick<T>(arr: T[], i: number): T {
 }
 
 function phoneFor(seed: number): string {
-  // Deterministic, obviously-fake-but-valid-shaped Indian mobile numbers.
   const base = 9000000000 + (seed * 137) % 99999999;
   return String(base).slice(0, 10);
 }
@@ -76,7 +75,6 @@ async function main() {
   await migrate();
   await seedReferenceData();
 
-  // Clean demo-only data so the seed is repeatable (real records are never touched).
   await q('DELETE FROM attendance_sessions WHERE is_demo = TRUE');
   await q('DELETE FROM students WHERE is_demo = TRUE');
   await q('DELETE FROM staff WHERE is_demo = TRUE');
@@ -87,7 +85,6 @@ async function main() {
   const studentHash = hashPassword('Student@123');
   const staffHash = hashPassword('Staff@123');
 
-  // Admin
   await q(
     `INSERT INTO users (full_name, email, phone, password_hash, role)
      VALUES ('Dr. Ramesh Kulkarni','admin@attendease.college','9000000001',$1,'admin')
@@ -105,7 +102,6 @@ async function main() {
     );
     const deptId = Number(dept!.id);
 
-    // HOD
     const hodEmail = `hod.${code.toLowerCase()}@attendease.college`;
     await q(
       `INSERT INTO users (full_name, email, phone, password_hash, role, department_id)
@@ -113,7 +109,6 @@ async function main() {
       [`Dr. ${pick(LAST_NAMES, deptIndex)} (HOD ${code})`, hodEmail, phoneFor(deptIndex * 11), hodHash, deptId],
     );
 
-    // Classes: semesters 3 and 5, sections A & B
     const classes: number[] = [];
     for (const sem of [3, 5]) {
       for (const sec of ['A', 'B']) {
@@ -128,7 +123,6 @@ async function main() {
       }
     }
 
-    // Subjects
     const subjects: { id: number; code: string }[] = [];
     for (const [scode, sname] of SUBJECT_POOL[code]) {
       const s = await one<{ id: number }>(
@@ -139,7 +133,6 @@ async function main() {
       subjects.push({ id: Number(s!.id), code: scode });
     }
 
-    // Teaching staff (includes the demo teacher account)
     const teacherEmail = `teacher.${code.toLowerCase()}@attendease.college`;
     const teacherUser = await one<{ id: number }>(
       `INSERT INTO users (full_name, email, phone, password_hash, role, department_id)
@@ -166,7 +159,6 @@ async function main() {
       );
       teachingStaff.push(Number(st!.id));
     }
-    // Non-teaching staff
     const designations = ['Lab Assistant', 'Office Superintendent', 'Librarian'];
     for (let n = 1; n <= 3; n += 1) {
       await q(
@@ -177,7 +169,6 @@ async function main() {
       );
     }
 
-    // Demo staff login (non-teaching, so they cannot mark attendance)
     const staffLoginEmail = `staff.${code.toLowerCase()}@attendease.college`;
     await q(
       `INSERT INTO users (full_name, email, phone, password_hash, role, department_id)
@@ -191,7 +182,6 @@ async function main() {
       [`${code}-N09`, `${pick(FIRST_NAMES, deptIndex + 5)} ${pick(LAST_NAMES, deptIndex + 9)}`, deptId, phoneFor(deptIndex * 53), staffLoginEmail],
     );
 
-    // Teacher assignments: teacher covers all classes in the dept for subject 1 & 2
     for (const classId of classes) {
       for (const sub of subjects.slice(0, 2)) {
         await q(
@@ -202,7 +192,6 @@ async function main() {
       }
     }
 
-    // Students: 12 per class
     let sIdx = 0;
     for (const classId of classes) {
       const cls = await one<{ semester: number; section: string }>('SELECT semester, section FROM classes WHERE id=$1', [classId]);
@@ -238,7 +227,6 @@ async function main() {
         ]);
       }
     }
-    // One student login for the CS department demo
     if (code === 'CS') {
       await q(
         `INSERT INTO users (full_name, email, phone, password_hash, role, department_id)
@@ -246,7 +234,6 @@ async function main() {
          ON CONFLICT (email) DO UPDATE SET password_hash=EXCLUDED.password_hash, department_id=EXCLUDED.department_id`,
         [studentHash, deptId],
       );
-      // Bind that login to a real student row so /me and self-service views resolve.
       const target = await one<{ id: number; roll_no: string; full_name: string }>(
         'SELECT id, roll_no, full_name FROM students WHERE department_id=$1 AND class_id=$2 ORDER BY roll_no LIMIT 1',
         [deptId, classes[0]],
@@ -260,7 +247,6 @@ async function main() {
 
   console.log('[seed] reference + master data done');
 
-  // ---- Demo attendance (last 15 weekdays) ----
   const days: string[] = [];
   const cursor = new Date(`${todayISO()}T00:00:00Z`);
   while (days.length < 15) {
@@ -303,7 +289,6 @@ async function main() {
     }
   }
 
-  // Demo staff attendance (department-level, period 1) for the same days
   const allDepts = await q<{ id: number; code: string }>('SELECT id, code FROM departments ORDER BY id');
   const admin = await one<{ id: number }>("SELECT id FROM users WHERE role='admin' LIMIT 1");
   let staffRecords = 0;
@@ -319,7 +304,7 @@ async function main() {
       for (let si = 0; si < staff.length; si += 1) {
         const r = (si * 5 + di * 2) % 100;
         const status = r < 88 ? 'present' : r < 94 ? 'absent' : r < 97 ? 'leave' : 'half_day';
-        await q('INSERT INTO staff_attendance (session_id, staff_id, status, marked_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING', [
+        await q('INSERT INTO staff_attendance (session_id, staff_id, status, marked_by) VALUES ($1,$2,$3,$4) ON CONFLICT (session_id, staff_id, marked_by) DO NOTHING', [
           s.id,
           staff[si].id,
           status,
@@ -335,8 +320,12 @@ async function main() {
   await closeDb();
 }
 
-main().catch(async (err) => {
-  console.error('[seed] failed', err);
-  await closeDb();
-  process.exit(1);
-});
+if (process.argv[1]?.includes('seed')) {
+  main().catch(async (err) => {
+    console.error('[seed] failed', err);
+    await closeDb();
+    process.exit(1);
+  });
+}
+
+export { main };   

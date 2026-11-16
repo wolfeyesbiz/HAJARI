@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { migrate, seedReferenceData } from './db/migrate.js';
-import { attachUser } from './middleware/auth.js';
+import { attachUser, requireAuth, requireRole } from './middleware/auth.js';
 import { errorHandler } from './lib/errors.js';
 import { authRouter } from './routes/auth.js';
 import { departmentsRouter, classesRouter, subjectsRouter, periodsRouter, assignmentsRouter } from './routes/catalog.js';
@@ -14,7 +14,7 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { smsRouter } from './routes/smsAdmin.js';
 import { reportsRouter, REPORT_LIST } from './routes/reports.js';
 import { startOutboxWorker, stopOutboxWorker } from './services/sms.js';
-import { requireAuth, requireRole } from './middleware/auth.js';
+import { main as seedMain } from './scripts/seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,7 +23,6 @@ export async function createApp() {
   await seedReferenceData();
 
   const app = express();
-  // CORS for the AttendEase Android WebView during local testing.
   const allowedOrigins = new Set([
     'https://localhost',
     'http://localhost',
@@ -37,10 +36,7 @@ export async function createApp() {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      res.setHeader(
-  'Access-Control-Allow-Headers',
-      'Content-Type, Authorization',
-);
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
       res.setHeader('Vary', 'Origin');
     }
 
@@ -59,7 +55,6 @@ export async function createApp() {
   app.use(cookieParser());
   app.use(attachUser);
 
-  // Baseline security headers (HTTPS/HSTS is terminated by the reverse proxy in production).
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -86,7 +81,6 @@ export async function createApp() {
     res.json({ allowed: true }),
   );
 
-  // Static SPA (built by `npm --prefix web run build`).
   const publicDir = path.join(__dirname, '..', 'public');
   app.use(express.static(publicDir, { maxAge: '1h', index: false }));
   app.get(/^\/(?!api).*/, (_req, res, next) => {
@@ -106,6 +100,7 @@ if (isDirectRun) {
     .then((app) => {
       const server = app.listen(config.port, () => {
         console.log(`[attendease] listening on http://localhost:${config.port}`);
+        seedMain().catch(err => console.error('[seed] failed', err));
       });
       const shutdown = () => {
         stopOutboxWorker();
@@ -118,4 +113,4 @@ if (isDirectRun) {
       console.error('[attendease] failed to start', err);
       process.exit(1);
     });
-}
+}   
