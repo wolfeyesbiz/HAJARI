@@ -3,7 +3,7 @@ services:
     name: hajari-app
     runtime: node
     plan: free
-    buildCommand: npm --prefix server install && npm --prefix web install && npm --prefix web run build && npm --prefix server run build
+    buildCommand: npm --prefix server install --include=dev && npm --prefix web install --include=dev && npm --prefix web run build && npm --prefix server run build
     startCommand: npm --prefix server start
     healthCheckPath: /api/health
     initialDeployHook: npm --prefix server run seed
@@ -20,4 +20,4 @@ services:
       - key: TRUST_PROXY
         value: "1"
       - key: SMS_DRIVER
-        value: log
+        value: log   
